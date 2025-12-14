@@ -1,49 +1,88 @@
-name: Laravel Tests
+name: Tests (PHP + Playwright)
 
 on: [push, pull_request]
 
 jobs:
-  laravel-tests:
+  tests:
     runs-on: ubuntu-latest
 
     steps:
+      # --- 1. Базові налаштування (Git, PHP) ---
       - uses: actions/checkout@v4
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv
+          extensions: sqlite, pdo_sqlite, dom, curl, libxml, mbstring, zip
           coverage: none
 
-      # 1. Встановлюємо Node.js (щоб працював npm)
+      - name: Copy .env
+        run: cp .env.example .env
+
+      - name: Install Composer Dependencies
+        run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
+
+      - name: Generate Key & Create DB
+        run: |
+          php artisan key:generate
+          touch database/database.sqlite
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: database/database.sqlite
+
+      - name: Migrate & Seed
+        run: php artisan migrate:fresh --seed --force
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: database/database.sqlite
+
+      # --- 2. PHP Тести (Pest) ---
+      # Важливо: ми передаємо абсолютний шлях до БД
+      - name: Run PHP Tests (Pest)
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ${{ github.workspace }}/database/database.sqlite
+        run: php artisan test
+
+      # --- 3. Налаштування Node.js та Фронтенду ---
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Install Composer Dependencies
-        run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
-
-      # 2. Встановлюємо NPM пакети і будуємо фронтенд (створюємо manifest.json)
-      - name: Install NPM and Build
+      - name: Install NPM & Build Assets
         run: |
-          npm install
+          npm ci
           npm run build
 
-      - name: Copy .env
-        run: cp .env.example .env
+      # Це команда, яка скачує бінарники браузерів (Chromium, Firefox і т.д.)
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
 
-      - name: Generate Key
-        run: php artisan key:generate
+      # --- 4. Запуск Playwright ---
 
-      - name: Create Database
+      # КРОК 1: Запускаємо Laravel сервер у фоновому режимі (&)
+      - name: Start Laravel Server
         run: |
-          mkdir -p database
-          touch database/database.sqlite
-
-      - name: Execute tests
+          php artisan serve --port=8000 &
+          sleep 5
         env:
           DB_CONNECTION: sqlite
           DB_DATABASE: ${{ github.workspace }}/database/database.sqlite
-        run: php artisan test
+
+      # КРОК 2: Запускаємо E2E тести
+      # Передаємо BASE_URL, щоб Playwright знав, куди стукати
+      - name: Run Playwright Tests
+        run: npx playwright test
+        env:
+          BASE_URL: http://localhost:8000
+
+      # (Опціонально) Якщо тести впадуть, зберігаємо відео/скріншоти як артефакт
+      - name: Upload Playwright Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
