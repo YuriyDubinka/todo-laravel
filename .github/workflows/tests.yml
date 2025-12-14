@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # --- 1. Базові налаштування (Git, PHP) ---
+      # --- 1. Базові налаштування (PHP + Node) ---
       - uses: actions/checkout@v4
 
       - name: Setup PHP
@@ -17,11 +17,25 @@ jobs:
           extensions: sqlite, pdo_sqlite, dom, curl, libxml, mbstring, zip
           coverage: none
 
+      # 👇 ВАЖЛИВО: Ставимо Node.js одразу
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Copy .env
         run: cp .env.example .env
 
+      # --- 2. Встановлення залежностей і ЗБІРКА ---
+
       - name: Install Composer Dependencies
         run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
+
+      # 👇 ВАЖЛИВО: Будуємо фронтенд ДО запуску будь-яких тестів
+      - name: Install NPM & Build Assets
+        run: |
+          npm ci
+          npm run build
 
       - name: Generate Key & Create DB
         run: |
@@ -37,32 +51,19 @@ jobs:
           DB_CONNECTION: sqlite
           DB_DATABASE: database/database.sqlite
 
-      # --- 2. PHP Тести (Pest) ---
-      # Важливо: ми передаємо абсолютний шлях до БД
+      # --- 3. PHP Тести (Pest) ---
+      # Тепер вони пройдуть, бо manifest.json вже існує
       - name: Run PHP Tests (Pest)
         env:
           DB_CONNECTION: sqlite
           DB_DATABASE: ${{ github.workspace }}/database/database.sqlite
         run: php artisan test
 
-      # --- 3. Налаштування Node.js та Фронтенду ---
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+      # --- 4. Playwright E2E Тести ---
 
-      - name: Install NPM & Build Assets
-        run: |
-          npm ci
-          npm run build
-
-      # Це команда, яка скачує бінарники браузерів (Chromium, Firefox і т.д.)
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
 
-      # --- 4. Запуск Playwright ---
-
-      # КРОК 1: Запускаємо Laravel сервер у фоновому режимі (&)
       - name: Start Laravel Server
         run: |
           php artisan serve --port=8000 &
@@ -71,14 +72,11 @@ jobs:
           DB_CONNECTION: sqlite
           DB_DATABASE: ${{ github.workspace }}/database/database.sqlite
 
-      # КРОК 2: Запускаємо E2E тести
-      # Передаємо BASE_URL, щоб Playwright знав, куди стукати
       - name: Run Playwright Tests
         run: npx playwright test
         env:
           BASE_URL: http://localhost:8000
 
-      # (Опціонально) Якщо тести впадуть, зберігаємо відео/скріншоти як артефакт
       - name: Upload Playwright Report
         if: failure()
         uses: actions/upload-artifact@v4
