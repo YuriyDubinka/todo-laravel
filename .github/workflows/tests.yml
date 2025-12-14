@@ -34,29 +34,30 @@ jobs:
       - name: Install Composer Dependencies
         run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
 
-      # --- 3. Налаштування Бази Даних (ЗАЛІЗОБЕТОННИЙ СПОСІБ) ---
+      # --- 3. Налаштування Бази Даних ---
       - name: Configure Database & Key
         run: |
-          # Генеруємо ключ
           php artisan key:generate
-
-          # Створюємо файл бази
           touch database/database.sqlite
 
-          # ЯВНО дописуємо налаштування у файл .env
-          # Тепер php artisan serve точно знатиме, де база
+          # Це потрібно для 'php artisan serve' (Playwright)
           echo "DB_CONNECTION=sqlite" >> .env
           echo "DB_DATABASE=${{ github.workspace }}/database/database.sqlite" >> .env
 
-          # Для дебагу: виведемо останні рядки .env, щоб переконатися
-          tail -n 5 .env
-
+      # Ми додаємо env сюди, щоб міграції точно пройшли в правильну базу
       - name: Migrate & Seed
         run: php artisan migrate:fresh --seed --force
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ${{ github.workspace }}/database/database.sqlite
 
       # --- 4. PHP Тести ---
+      # 👇 ТУТ БУЛА ПОМИЛКА. Ми повертаємо env, щоб перебити phpunit.xml
       - name: Run PHP Tests (Pest)
         run: php artisan test
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ${{ github.workspace }}/database/database.sqlite
 
       # --- 5. Playwright E2E Тести ---
       - name: Install Playwright Browsers
@@ -64,7 +65,7 @@ jobs:
 
       - name: Start Laravel Server
         run: |
-          # Запускаємо сервер. Він сам прочитає .env файл з правильним шляхом
+          # Сервер прочитає шлях з .env файлу, який ми змінили вище
           php artisan serve --port=8000 &
           sleep 5
 
@@ -73,7 +74,6 @@ jobs:
         env:
           BASE_URL: http://localhost:8000
 
-      # Збереження звіту про помилки (якщо будуть)
       - name: Upload Playwright Report
         if: failure()
         uses: actions/upload-artifact@v4
