@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # --- 1. Базові налаштування (PHP + Node) ---
+      # --- 1. Базові налаштування ---
       - uses: actions/checkout@v4
 
       - name: Setup PHP
@@ -17,7 +17,6 @@ jobs:
           extensions: sqlite, pdo_sqlite, dom, curl, libxml, mbstring, zip
           coverage: none
 
-      # 👇 ВАЖЛИВО: Ставимо Node.js одразу
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -26,57 +25,55 @@ jobs:
       - name: Copy .env
         run: cp .env.example .env
 
-      # --- 2. Встановлення залежностей і ЗБІРКА ---
-
-      - name: Install Composer Dependencies
-        run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
-
-      # 👇 ВАЖЛИВО: Будуємо фронтенд ДО запуску будь-яких тестів
+      # --- 2. Збірка Фронтенду ---
       - name: Install NPM & Build Assets
         run: |
           npm ci
           npm run build
 
-      - name: Generate Key & Create DB
+      - name: Install Composer Dependencies
+        run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
+
+      # --- 3. Налаштування Бази Даних (ЗАЛІЗОБЕТОННИЙ СПОСІБ) ---
+      - name: Configure Database & Key
         run: |
+          # Генеруємо ключ
           php artisan key:generate
+
+          # Створюємо файл бази
           touch database/database.sqlite
-        env:
-          DB_CONNECTION: sqlite
-          DB_DATABASE: database/database.sqlite
+
+          # ЯВНО дописуємо налаштування у файл .env
+          # Тепер php artisan serve точно знатиме, де база
+          echo "DB_CONNECTION=sqlite" >> .env
+          echo "DB_DATABASE=${{ github.workspace }}/database/database.sqlite" >> .env
+
+          # Для дебагу: виведемо останні рядки .env, щоб переконатися
+          tail -n 5 .env
 
       - name: Migrate & Seed
         run: php artisan migrate:fresh --seed --force
-        env:
-          DB_CONNECTION: sqlite
-          DB_DATABASE: database/database.sqlite
 
-      # --- 3. PHP Тести (Pest) ---
-      # Тепер вони пройдуть, бо manifest.json вже існує
+      # --- 4. PHP Тести ---
       - name: Run PHP Tests (Pest)
-        env:
-          DB_CONNECTION: sqlite
-          DB_DATABASE: ${{ github.workspace }}/database/database.sqlite
         run: php artisan test
 
-      # --- 4. Playwright E2E Тести ---
-
+      # --- 5. Playwright E2E Тести ---
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
 
       - name: Start Laravel Server
         run: |
+          # Запускаємо сервер. Він сам прочитає .env файл з правильним шляхом
           php artisan serve --port=8000 &
           sleep 5
-        env:
-          DB_CONNECTION: sqlite
-          DB_DATABASE: ${{ github.workspace }}/database/database.sqlite
 
       - name: Run Playwright Tests
         run: npx playwright test
         env:
           BASE_URL: http://localhost:8000
 
+      # Збереження звіту про помилки (якщо будуть)
       - name: Upload Playwright Report
         if: failure()
         uses: actions/upload-artifact@v4
