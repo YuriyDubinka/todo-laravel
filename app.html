@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>My Vue Task App</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    </head>
+    <body class="bg-gray-100 h-screen flex items-center justify-center">
+        <div id="app" class="w-full max-w-md bg-white rounded-xl shadow-lg p-6">
+            <h1 class="text-2xl font-bold mb-4 text-gray-800">
+                🚀 My Tasks (API Mode)
+            </h1>
+
+            <div v-if="!isLoaded" class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1"
+                    >Paste your API Token:</label
+                >
+                <input
+                    type="text"
+                    v-model="token"
+                    placeholder="1|abcdef..."
+                    class="w-full border p-2 rounded mb-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+
+                <button
+                    @click="fetchTasks"
+                    class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition"
+                >
+                    Load Tasks
+                </button>
+            </div>
+
+            <div v-else>
+                <div class="flex justify-between items-center mb-4">
+                    <span class="text-green-600 font-bold text-sm"
+                        >● Connected</span
+                    >
+                    <button
+                        @click="isLoaded = false"
+                        class="text-xs text-gray-400 hover:text-gray-600"
+                    >
+                        Change Token
+                    </button>
+                </div>
+
+                <ul class="space-y-3">
+                    <li
+                        v-for="task in tasks"
+                        :key="task.id"
+                        class="flex justify-between items-center border-b pb-2"
+                    >
+                        <div>
+                            <div
+                                class="font-medium"
+                                :class="{'line-through text-gray-400': task.status === 'done'}"
+                            >
+                                {{ task.title }}
+                            </div>
+                            <div
+                                class="text-xs text-indigo-500"
+                                v-if="task.category"
+                            >
+                                {{ task.category }}
+                            </div>
+                        </div>
+
+                        <span
+                            class="text-xs px-2 py-1 rounded"
+                            :class="task.status === 'done' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'"
+                        >
+                            {{ task.status }}
+                        </span>
+                    </li>
+                </ul>
+
+                <div
+                    v-if="tasks.length === 0"
+                    class="text-center text-gray-500 mt-4"
+                >
+                    No tasks found via API.
+                </div>
+            </div>
+
+            <div
+                v-if="errorMessage"
+                class="mt-4 p-3 bg-red-100 text-red-700 text-sm rounded"
+            >
+                Error: {{ errorMessage }}
+            </div>
+        </div>
+
+        <script>
+            const { createApp } = Vue;
+
+            createApp({
+                data() {
+                    return {
+                        token: "", // Тут зберігається токен з поля вводу
+                        tasks: [], // Сюди завантажаться задачі
+                        isLoaded: false, // Чи завантажили ми дані?
+                        errorMessage: "",
+                    };
+                },
+                methods: {
+                    async fetchTasks() {
+                        this.errorMessage = ""; // Очищаємо помилки
+
+                        if (!this.token) {
+                            this.errorMessage = "Please enter a token first!";
+                            return;
+                        }
+
+                        try {
+                            // РОБИМО ЗАПИТ НА ТВІЙ API
+                            const response = await fetch(
+                                "http://127.0.0.1:8000/api/my-tasks",
+                                {
+                                    method: "GET",
+                                    headers: {
+                                        Authorization: "Bearer " + this.token,
+                                        Accept: "application/json", // Кажемо "Дай мені JSON, а не HTML"
+                                    },
+                                }
+                            );
+
+                            if (!response.ok) {
+                                throw new Error(
+                                    "Unauthorized or Failed: " + response.status
+                                );
+                            }
+
+                            // Розбираємо JSON
+                            const result = await response.json();
+
+                            // Laravel Resources повертають дані в обгортці "data".
+                            // Тому ми беремо result.data
+                            this.tasks = result.data;
+                            this.isLoaded = true;
+                        } catch (error) {
+                            this.errorMessage = error.message;
+                            console.error(error);
+                        }
+                    },
+                },
+            }).mount("#app");
+        </script>
+    </body>
+</html>

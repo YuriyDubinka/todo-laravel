@@ -1,0 +1,49 @@
+name: Laravel Tests
+
+on: [push, pull_request]
+
+jobs:
+  laravel-tests:
+    # Віртуальна машина, на якій все буде відбуватися
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Скачуємо твій код з репозиторія
+      - uses: actions/checkout@v4
+
+      # 2. Встановлюємо PHP (як ми робили на твоєму Mac, але автоматично)
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3" # Або 8.2, залежно від того, що у тебе в composer.json
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv
+          coverage: none
+
+      # 3. Встановлюємо залежності (Vendor)
+      - name: Install Dependencies
+        run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
+
+      # 4. Налаштовуємо середовище (.env)
+      - name: Copy .env
+        run: cp .env.example .env
+
+      # 5. Генеруємо ключ шифрування
+      - name: Generate Key
+        run: php artisan key:generate
+
+      # 6. Створюємо порожню базу даних (SQLite) для тестів
+      # Для CI тестів SQLite швидше і простіше, ніж піднімати MySQL контейнер
+      - name: Create Database
+        run: |
+          mkdir -p database
+          touch database/database.sqlite
+
+      # 7. Вказуємо Laravel використовувати SQLite для тестів
+      - name: Set Environment Variables
+        run: |
+          echo "DB_CONNECTION=sqlite" >> .env
+          echo "DB_DATABASE=database/database.sqlite" >> .env
+
+      # 8. ЗАПУСК ТЕСТІВ 🚀
+      - name: Execute tests (Unit and Feature tests) via Pest/PHPUnit
+        run: php artisan test
